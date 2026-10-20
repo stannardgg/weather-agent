@@ -126,3 +126,30 @@ git pull --no-ff    # 本次允许生成合并提交
 - 凭据：`credential.helper=manager`，Windows 凭据管理器已存 token
 - 未安装 `gh` CLI，查 CI 结果需在浏览器打开仓库的 **Actions** 页
 - 配置：`core.autocrlf=false`、`push.default=simple`、`pull.ff=only`、`core.safecrlf=warn`
+
+## 七、一键脚本（对上面流程的封装）
+
+两个脚本功能对等，只是运行环境不同：
+
+| 脚本 | 运行环境 | 交互模式 | 全自动 |
+| --- | --- | --- | --- |
+| `push.bat` | Windows，双击即可 | `push.bat` | `push.bat -y` |
+| `push.sh` | Git Bash / Linux / macOS | `bash push.sh` | `bash push.sh -y` |
+
+脚本按顺序做四件事：
+
+1. 确认当前目录是 Git 仓库；
+2. 列出全部改动，并**拦截** `.env`、`*.db`、`*.sqlite3`、`*.exe`、`logs/`
+   （`.env.example` 已排除，不会误报）；
+3. 交互模式下要求输入 `y` 确认，可自定义提交信息，直接回车用默认值；
+4. 提交并推送；若推送被拒，自动 `git pull --rebase` 后重推，冲突时给出处理提示。
+
+**为什么要拦截而不是直接 `git add -A`**：`add -A` 是新手最容易出事的一步，
+而推送出去的内容无法真正撤回。脚本把检查点放在推送之前，代价只是多按一次回车。
+
+**为什么 `push.bat` 里没有中文**：`cmd.exe` 按系统 ANSI 代码页（简体中文为 GBK）
+解码批处理文件，文件里的 UTF-8 中文会让解析器错乱——实测表现为
+`'-' is not recognized as an internal or external command`，随后流程直接卡死，
+加 `chcp 65001` 也救不回来（代码页切换发生在解析之后）。
+所以 `.bat` 保持纯 ASCII，中文提示只放在 `push.sh` 和本文档里。
+修改 `push.bat` 时请务必维持这一点。
