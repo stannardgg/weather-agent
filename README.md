@@ -334,6 +334,47 @@ curl -N -X POST http://127.0.0.1:8000/api/v1/chat \
 
 两份词表在 `app/agent/router.py` 里，**当配置看待**，需要随真实提问持续补充。刻意注意：「预警」这类跨语境的词（「橙色预警对应什么处置流程」vs「暴雨橙色预警」）**刻意不放进任何一侧**，否则必然把另一侧判错。
 
+### Agent 编排模式（C 阶段）
+
+系统有两套取数方式，由 `AGENT_MODE` 切换，下游（prompt 组装、短路、SSE 流式）完全共用：
+
+| 模式 | 谁决定调什么 | 优点 | 代价 |
+| --- | --- | --- | --- |
+| `router`（默认） | 规则/模型判意图后走固定分支 | 确定、零额外 token、可预测 | 加工具要改图；模型没有选择权 |
+| `tool_loop` | 模型自己看工具清单决定 | 加工具只需 `register()`；能处理组合意图 | 每轮多一次决策调用；行为依赖模型能力 |
+
+```bash
+AGENT_MODE=tool_loop          # 切到自主取数
+AGENT_MAX_TOOL_ITERATIONS=3   # 轮次上限，防止「查不到就换个说法再查」的死循环
+```
+
+**降级是内建的**：模型不支持 `bind_tools`、或该调的没调、或工具全部失败时，节点会按意图用规则补一次取数，行为退回 `router` 模式。所以 `tool_loop` 的效果只会比 `router` 差在 token，不会差在可用性。
+
+新增工具的步骤（不再改图）：
+
+1. 在 `app/tools/builtin.py` 写一个 `async def handler(args, ctx) -> ToolResult`；
+2. 在 `build_default_registry()` 里 `register()` 一个 `ToolSpec`；
+3. 在 `evals/agent_cases.json` 加用例，跑评测确认模型会选它。
+
+### 护栏（C 阶段）
+
+- **输入侧**：命中典型劫持句式（伪造 `<|im_start|>` 角色标记、`ignore previous instructions`、索要系统提示词）时，请求**不进模型**，直接返回固定文案并置 `short_circuit=true`。高置信模式单条即拦，低置信模式需累计到 `GUARDRAIL_INJECTION_THRESHOLD`（默认 2），避免「忽略上面的空白」这类正常表达被误伤。
+- **输出侧**：空回答替换为兜底话术；回答声称引用知识库却没有任何来源时记一条 note（**不改答案**，因为模型可能在引用历史对话）。
+
+⚠️ 边界：这**不是内容安全审核**。涉政/涉黄/暴力等内容分级需要专门的内容安全服务，本模块只处理「试图劫持指令」这一类结构化攻击。
+
+### 评测
+
+```bash
+python scripts/eval_agent.py                  # 规则层，完全离线，可进 CI
+python scripts/eval_agent.py --mode full      # 真实模型，评工具选择准确率
+```
+
+金标集在 `evals/agent_cases.json`（20 条，覆盖 weather / knowledge / mixed / chat / 注入）。
+当前基线：护栏准确率 100%，规则意图准确率 100%（仅在规则命中的样本上），规则覆盖率 70%。
+
+**它证明什么**：规则覆盖度与工具选择是否走对。**不证明**答案的事实正确性——那需要人工评分标准，属于另一个层级的工作。`--mode full` 的结论会随上游模型版本漂移，所以它是人工验收工具，不进 CI。
+
 ### LLM 配置
 
 ```bash

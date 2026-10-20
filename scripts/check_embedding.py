@@ -81,7 +81,7 @@ def report_config() -> None:
     print("=" * 76)
     print("向量化自检（D-M4-1 决策：本地 ONNX / fastembed）")
     print("=" * 76)
-    print(f"\n[1] 当前配置")
+    print("\n[1] 当前配置")
     print(f"{INFO} EMBEDDING_PROVIDER = {settings.embedding_provider}")
     print(f"{INFO} EMBEDDING_MODEL    = {settings.embedding_model}")
     print(f"{INFO} EMBEDDING_DIM      = {settings.embedding_dim}")
@@ -100,7 +100,7 @@ def main() -> int:
     checks = Checks()
     report_config()
 
-    print(f"\n[2] 解析模型元数据（离线，不需要下载）")
+    print("\n[2] 解析模型元数据（离线，不需要下载）")
     try:
         model_dim = _resolve_model_dimension(settings.embedding_model)
         print(f"{INFO} 模型 {settings.embedding_model} 的真实维度 = {model_dim}")
@@ -141,7 +141,7 @@ def main() -> int:
         print(f"\n结果：{checks.passed} 项通过，{checks.failed} 项失败")
         return 1 if checks.failed else 0
 
-    print(f"\n[4] 加载模型并做首次推理（首次会下载，可能要等十几秒）")
+    print("\n[4] 加载模型并做首次推理（首次会下载，可能要等十几秒）")
     started = time.time()
     try:
         vectors = asyncio.run(embedder.embed_documents([d[0] for d in DOCS]))
@@ -162,7 +162,7 @@ def main() -> int:
     norms = np.linalg.norm(doc_matrix, axis=1)
     print(f"{INFO} 向量模长范围 {norms.min():.4f} ~ {norms.max():.4f}（归一化与否都能用余弦距离）")
 
-    print(f"\n[5] 确定性：同一段文本必须得到完全相同的向量")
+    print("\n[5] 确定性：同一段文本必须得到完全相同的向量")
     again = asyncio.run(embedder.embed_documents([DOCS[0][0]]))
     checks.check(
         "同一文本两次结果完全一致",
@@ -170,7 +170,7 @@ def main() -> int:
         "不一致会导致「重建索引后检索结果变了」这种无法复现的问题",
     )
 
-    print(f"\n[6] 语义有效性：意思相近的文本应当比无关文本更接近")
+    print("\n[6] 语义有效性：意思相近的文本应当比无关文本更接近")
     related = cosine(
         np.array(asyncio.run(embedder.embed_query("住宿费上限是多少？"))),
         doc_matrix[0],
@@ -187,7 +187,7 @@ def main() -> int:
         f"相关 {related:.4f} 未明显高于无关 {unrelated:.4f}",
     )
 
-    print(f"\n[7] 检索排序：用小规模语料验证真实召回效果")
+    print("\n[7] 检索排序：用小规模语料验证真实召回效果")
     query_vectors = np.array(
         [asyncio.run(embedder.embed_query(q)) for q, _ in QUERIES]
     )
@@ -209,7 +209,7 @@ def main() -> int:
     )
     print(f"{INFO} 合计：Recall@1={recall1}/{len(QUERIES)}  MRR={mrr:.4f}")
 
-    print(f"\n[8] 查询前缀的影响（供你判断是否要在自己的语料上关掉它）")
+    print("\n[8] 查询前缀的影响（供你判断是否要在自己的语料上关掉它）")
     plain = FastembedEmbedder(instruction="")
     with_prefix = get_embedder()
     plain_docs = np.array(asyncio.run(plain.embed_documents([d[0] for d in DOCS])))

@@ -169,7 +169,7 @@ def seed_models(run_dir: Path) -> None:
         target = run_dir / "data" / "models"
         target.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source, target / "fastembed", dirs_exist_ok=True)
-        print(f"  (已内置向量模型缓存，避免验收时联网下载)")
+        print("  (已内置向量模型缓存，避免验收时联网下载)")
 
 
 def main() -> int:
