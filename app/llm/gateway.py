@@ -222,6 +222,22 @@ def usage_of(message: Any) -> dict[str, int]:
     return {key: int(value) for key, value in picked.items() if isinstance(value, int)}
 
 
+def merge_usage(base: dict[str, int], extra: dict[str, int]) -> dict[str, int]:
+    """把两次调用的用量相加，用于多轮工具调用与「决策轮 + 生成轮」的场景。
+
+    语义陷阱：任何一方缺某个键时，**不能按 0 处理**——按 0 相加会让「上游没返回」
+    与「确实为 0」混为一谈（同 `usage_of` 的理由）。所以只累加双方都有的键，
+    缺的键保持缺席。代价是总量可能偏低，但「偏低且标注为不完整」比「精确的错误值」好。
+    """
+    merged = dict(base)
+    for key, value in extra.items():
+        if key in merged:
+            merged[key] += value
+        else:
+            merged[key] = value
+    return merged
+
+
 def _translate(exc: Exception) -> AppError:
     """把厂商异常翻译成带**处置建议**的自家异常。
 

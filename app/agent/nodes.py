@@ -29,7 +29,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent import extract, router
+from app.agent import extract, guardrail, router
 from app.agent.state import (
     RETRIEVAL_INTENTS,
     WEATHER_INTENTS,
@@ -52,11 +52,19 @@ NODE_WEATHER = "fetch_weather"
 NODE_RETRIEVE = "retrieve_knowledge"
 NODE_COMPOSE = "compose"
 NODE_GENERATE = "generate"
+# C 阶段新增：模型自主调用工具取数（见 tool_loop.py）。它与上面三个取数节点是
+# **并列**关系，由 AGENT_MODE 决定走哪边——两条路最终都汇合到 compose。
+NODE_TOOL_LOOP = "tool_loop"
 
 # 条件边 `route_after_compose` 的两个出口。名字起成「路由键」而不是节点名，
 # 是因为「短路结束」在 LangGraph 里对应 END 常量而不是某个节点（见 graph.py 的映射表）。
 ROUTE_SHORT_CIRCUIT = "short_circuit"
 ROUTE_GENERATE = NODE_GENERATE
+
+# --- 输入护栏（C 阶段）---
+NODE_GUARD = "guard_input"
+ROUTE_BLOCKED = "blocked"
+ROUTE_CONTINUE = "continue"
 
 
 class AgentStateError(AppError):
@@ -88,6 +96,33 @@ async def classify_intent(state: AgentState) -> dict[str, Any]:
     question = state.get("question") or ""
     intent, source = await router.classify(question)
     return {"intent": intent.value, "intent_source": source.value}
+
+
+async def guard_input(state: AgentState) -> dict[str, Any]:
+    """节点⓪：输入护栏。命中劫持句式就短路，请求**不进模型**。
+
+    放在最前面而不是塞进 classify_intent：拦截的语义是"这次请求根本不处理"，
+    与"判成什么意图"是两件事。混在一个节点里，之后想单独统计拦截率或换成
+    外部审核服务时，会发现这段逻辑已经和分类纠缠在一起。
+    """
+    question = state.get("question") or ""
+    if not guardrail.is_blocked(question):
+        return {"guardrail_blocked": False}
+
+    # 拦截时才统计命中明细（正常请求不该为一条日志多扫一遍全部正则）
+    hits, patterns = guardrail.score_injection(question)
+
+    # 只记命中的规则编号/片段，**不把原文整段打进日志**：那段文本本身就是攻击载荷，
+    # 原样落盘等于把攻击串写进日志系统（还可能被日志采集器二次转发）。
+    logger.warning("输入护栏拦截 user_id=%s 命中=%s 规则=%s", state.get("user_id"), hits, patterns)
+    return {
+        "guardrail_blocked": True,
+        "short_circuit": True,
+        "answer": guardrail.GUARDRAIL_BLOCKED_ANSWER,
+        "notes": _with_notes(
+            state, f"输入护栏：命中 {hits} 条劫持句式，已短路（请求未进入模型）"
+        ),
+    }
 
 
 async def fetch_weather(state: AgentState) -> dict[str, Any]:
@@ -209,20 +244,34 @@ async def generate(state: AgentState) -> dict[str, Any]:
         raise AgentStateError("generate 节点收到了空的 messages（短路分流可能接错了）")
 
     parts: list[str] = []
-    usage: dict[str, int] = {}
+    # 流式路径下 usage_metadata 挂在**最后一个 chunk** 上，而且是累计值而非增量，
+    # 所以中途只记录、不累加；最后再与 state 里已有的用量（工具决策轮消耗的）
+    # 合并。少了这一步，tool_loop 模式下的 token 计量会漏掉决策轮。
+    stream_usage: dict[str, int] = {}
     async for chunk in gateway.astream_chunks(messages):
         text = gateway.text_of(chunk)
         if text:
             parts.append(text)
         got = gateway.usage_of(chunk)
         if got:
-            usage = got
+            stream_usage = got
 
+    usage = gateway.merge_usage(dict(state.get("usage") or {}), stream_usage)
     answer = "".join(parts)
+
+    # 输出护栏：空回答兜底 + 引用一致性留痕。放在这里而不是 service 层，
+    # 是因为它是「生成」这一步的产物质量检查，与落库无关。
+    answer, guard_notes = guardrail.check_answer(
+        answer, has_sources=bool(state.get("weather") or state.get("chunks"))
+    )
     return {
         "answer": answer,
         "usage": usage,
-        "notes": _with_notes(state, f"模型输出 {len(answer)} 字，用量={usage or '上游未返回'}"),
+        "notes": _with_notes(
+            state,
+            f"模型输出 {len(answer)} 字，用量={usage or '上游未返回'}",
+            *guard_notes,
+        ),
     }
 
 
@@ -231,9 +280,23 @@ async def generate(state: AgentState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def route_after_guard(state: AgentState) -> str:
+    """护栏命中就结束（答案已定，模型没机会看到这次提问），否则继续判意图。"""
+    return ROUTE_BLOCKED if state.get("guardrail_blocked") else ROUTE_CONTINUE
+
+
 def route_after_classify(state: AgentState) -> str:
-    """按意图分流：天气 → 天气节点；知识库 → 检索节点；混合 → 先天气再检索；闲聊 → 直接组装。"""
+    """按意图分流：天气 → 天气节点；知识库 → 检索节点；混合 → 先天气再检索；闲聊 → 直接组装。
+
+    `AGENT_MODE=tool_loop` 时，三种「需要外部数据」的意图统一改走 tool_loop 节点，
+    由模型自己决定调哪些工具；闲聊仍然直连 compose——为一句「你好」去调一次
+    工具决策模型是纯浪费。
+    """
     intent = state.get("intent") or Intent.CHAT.value
+
+    if settings.agent_mode == "tool_loop" and intent != Intent.CHAT.value:
+        return NODE_TOOL_LOOP
+
     if intent == Intent.WEATHER.value:
         return NODE_WEATHER
     if intent == Intent.KNOWLEDGE.value:

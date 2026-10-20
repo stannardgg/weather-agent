@@ -54,6 +54,20 @@ KNOWLEDGE_KEYWORDS: tuple[str, ...] = (
     "应急", "响应", "分级", "级别", "部室", "岗位", "职责",
     "培训", "考核", "绩效", "招聘", "入职", "离职", "薪资", "工资", "福利",
     "年假", "考勤", "采购", "合同", "工单", "运维", "客服", "话术", "报价", "资质",
+    # 2026-10-20 由评测集（evals/agent_cases.json 的 k-05）发现的空白：
+    # 「试用期多长时间，转正需要什么条件」不含表内任何词，只能落到 LLM 兜底。
+    "试用期", "转正", "工龄", "请假", "加班", "调休", "社保", "公积金", "劳动合同",
+)
+
+# 任务类动词：描述「要对这段文本做什么」，与话题无关。
+# 存在的理由是一个真实误判（评测集 c-04）：「把这句话翻译成英文：今天天气不错」
+# 命中了「天气」→ 被判成 weather → 会去调查询接口，然后拿天气回答一个翻译请求。
+# 这类问法的共同点是「话题词只是被处理的对象」，所以任务词应当**否决**话题词。
+TASK_KEYWORDS: tuple[str, ...] = (
+    "翻译", "译成", "translate", "润色", "改写", "缩写", "扩写",
+    "写一首", "写一段", "写个", "写一个", "改写一下",
+    "编程", "代码", "算法", "函数", "报错", "正则",
+    "用英文", "用英语", "用中文", "英文怎么说",
 )
 
 # 纯问候/道谢：短句 + 含问候词 + 不含任何业务词 → 直接判 chat，不必花一次 LLM 调用。
@@ -94,6 +108,12 @@ def classify_by_rules(question: str) -> tuple[Intent, list[str], list[str]] | No
 
     weather_hits = _hits(lowered, WEATHER_KEYWORDS)
     knowledge_hits = _hits(lowered, KNOWLEDGE_KEYWORDS)
+    task_hits = _hits(lowered, TASK_KEYWORDS)
+
+    # 任务类请求优先：话题词在这里只是「被处理的对象」，不是「要查询的内容」。
+    # 只在没有知识库词时生效——「按制度把这段翻译一下」仍应去查制度原文。
+    if task_hits and not knowledge_hits:
+        return Intent.CHAT, weather_hits, knowledge_hits
 
     if not weather_hits and not knowledge_hits:
         if _is_greeting(text, lowered):

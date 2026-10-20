@@ -220,6 +220,9 @@ def _provenance(state: AgentState, sources: list[ChatSource]) -> dict[str, Any]:
         "short_circuit": bool(state.get("short_circuit")),
         "notes": list(state.get("notes") or []),
         "sources": [source.model_dump(exclude_none=True) for source in sources],
+        # 工具调用轨迹（C 阶段）：router 模式下恒为空列表，tool_loop 模式下记录
+        # 每次调用与成败。存进 JSON 列不影响表结构，前端与排障脚本都能读。
+        "tool_trace": list(state.get("tool_trace") or []),
     }
 
 

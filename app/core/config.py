@@ -14,6 +14,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # 而不是等到第一次上传文档才发现。
 EMBEDDING_PROVIDERS = {"placeholder", "fastembed"}
 
+# Agent 编排模式白名单（详见 Settings.agent_mode 的注释）
+AGENT_MODES = {"router", "tool_loop"}
+
 
 class Settings(BaseSettings):
     """全部配置项。字段名小写，对应 .env 里的大写变量（pydantic 自动做大小写映射）。"""
@@ -113,9 +116,27 @@ class Settings(BaseSettings):
     rate_limit_chat_window_seconds: int = 60
     # 指标端点开关（企业内网可关闭）
     metrics_enabled: bool = True
+    # --- Agent 编排模式（C 阶段）---
+    # router     : 规则/模型判意图 → 三条硬编码分支。确定性高、无额外 token，
+    #              但「要不要查天气」由分类器决定，模型没有选择权。
+    # tool_loop  : 把工具清单交给模型自主调用（见 agent/tool_loop.py）。
+    #              灵活、加工具不用改图，代价是每轮多一次决策调用。
+    # 默认 router：新路径的效果需要真实密钥 + 评测集才能确认，在没跑过评测前
+    # 就把它设成默认，等于让所有用户替我们做灰度。要体验就显式切过去。
+    agent_mode: str = "router"
+    # 工具调用轮次上限。3 轮足够覆盖「先查天气再查制度」这类组合，
+    # 再多的场景通常是模型在失败后重试——那属于该被截断的行为。
+    agent_max_tool_iterations: int = 3
     # LLM 调用弹性（M6-Q4）：对可恢复错误（网络/5xx/429）的重试次数，交给 SDK 的
     # max_retries 实现（其内部已按指数退避，且 4xx 不重试——与 §11 第 2 条一致）。
     llm_max_retries: int = 2
+
+    # --- Guardrail（C 阶段）---
+    # 单次提问里「疑似提示注入」的最大命中数，超过即拦截。
+    # 阈值不是 0：正常用户说「忽略上面的空白」也会命中关键词，一律拦截会误伤。
+    guardrail_injection_threshold: int = 2
+    # 输出侧：回答里声称引用知识库、却一条来源都没有时，是否追加提醒。
+    guardrail_citation_check: bool = True
 
     @model_validator(mode="after")
     def _validate_secret_key(self) -> "Settings":
@@ -216,6 +237,24 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name.upper()} 必须为正数")
         if self.llm_max_retries < 0:
             raise ValueError("LLM_MAX_RETRIES 不能为负")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_agent(self) -> "Settings":
+        """Agent 模式与工具轮次的启动期校验。
+
+        `AGENT_MODE` 写错（如 "tool-loop" 少个下划线）时若不拦，路由函数会永远
+        走 else 分支退回 router——功能"能用"，但你以为开启了自主决策，实际没有。
+        这种"配置静默失效"比直接报错难查得多。
+        """
+        if self.agent_mode not in AGENT_MODES:
+            raise ValueError(
+                f"不支持的 AGENT_MODE「{self.agent_mode}」，可选：{'、'.join(sorted(AGENT_MODES))}"
+            )
+        if self.agent_max_tool_iterations < 1:
+            raise ValueError("AGENT_MAX_TOOL_ITERATIONS 至少为 1")
+        if self.guardrail_injection_threshold < 1:
+            raise ValueError("GUARDRAIL_INJECTION_THRESHOLD 至少为 1")
         return self
 
     @property

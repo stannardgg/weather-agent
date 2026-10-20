@@ -93,9 +93,14 @@ class AgentState(TypedDict, total=False):
     weather: WeatherResult | None
     chunks: list[RetrievedChunk]
     messages: list[Any]  # 实际的 list[BaseMessage]，见类说明
+    # 工具调用轨迹（C 阶段）：每次调用记一轮 {round, tool, ok, error}。
+    # 存在的理由与 intent_source 相同——出问题时要能回答「模型到底调了什么、
+    # 失败了没有」，而不是靠猜。它会随回答一起进 messages.tool_calls 落库。
+    tool_trace: list[dict[str, Any]]
 
     # --- 输出 ---
     answer: str
     usage: dict[str, int]
     short_circuit: bool  # True = 答案已定，不再调模型（防幻觉的硬保证）
+    guardrail_blocked: bool  # True = 输入护栏判定为劫持尝试，已在入口短路
     notes: list[str]  # 给日志/前端看的过程信息（如「天气取数失败」）
