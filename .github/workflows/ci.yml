@@ -73,7 +73,7 @@ jobs:
             --cov=app \
             --cov-report=term \
             --cov-report=xml \
-            --cov-fail-under=60
+            --cov-fail-under=75
 
       - name: 上传覆盖率报告
         if: always()
