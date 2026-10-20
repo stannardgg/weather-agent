@@ -1,0 +1,32 @@
+# 企业级天气查询 Agent —— 后端 + 前端两服务编排。
+# 使用前：cp .env.example .env 并填好密钥（WEATHER_* 与 LLM_*）。
+# 数据（SQLite / Chroma / 上传文件 / 模型缓存）统一挂在 ./data，删容器不丢数据。
+
+services:
+  backend:
+    build: .
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: .
+    # Streamlit 是「服务端渲染 + 服务端调用后端」，API_BASE_URL 走容器内网即可，
+    # 浏览器不直接连 backend，因此这里用服务名 backend 而非 localhost。
+    command: >
+      streamlit run frontend/app.py
+      --server.address 0.0.0.0 --server.port 8501 --server.headless true
+    environment:
+      - API_BASE_URL=http://backend:8000/api/v1
+    depends_on:
+      - backend
+    ports:
+      - "8501:8501"
+    restart: unless-stopped

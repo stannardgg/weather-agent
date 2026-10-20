@@ -1,0 +1,57 @@
+# 依赖按里程碑递增（CLAUDE.md §2.3：不引入超出当前阶段需要的依赖）
+
+# --- M0：可启动骨架 ---
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic-settings>=2.6
+
+# --- M1：异步数据层 + 迁移 + 鉴权 ---
+sqlalchemy[asyncio]>=2.0
+aiosqlite>=0.20
+alembic>=1.13
+pyjwt>=2.9
+bcrypt>=4.2
+
+# --- M2：调用外部天气 API（异步 HTTP 客户端）---
+httpx>=0.27
+
+# --- M3：知识库入库（上传 → 解析 → 切分 → 向量化 → 入库）---
+chromadb>=0.5
+# 切分：langchain-text-splitters 是单独拆出的包，**不在** langchain-community 的 sunset 范围内
+langchain-text-splitters>=0.3
+# 解析：直接用底层库（D-M4-2 决策，2026-10-12）
+# 原本经 langchain-community 的 PyPDFLoader / Docx2txtLoader 调用，但那两个类只是
+# 这两个库外面的薄包装，而 langchain-community 已 sunset（不再修任何问题含安全漏洞）。
+# 自写解析后依赖净减少，详见 app/rag/loader.py 顶部说明。
+pypdf>=5.0                 # PDF 解析（BSD 许可，刻意不用 AGPL 的 pymupdf）
+docx2txt>=0.8              # DOCX 解析
+python-multipart>=0.0.12   # FastAPI 接收 multipart 上传必需
+
+# 向量化：本地 ONNX 真实模型（D-M4-1 决策，2026-10-12）
+# 选它而不是 sentence-transformers + torch：onnxruntime 本来就随 chromadb 装进来了，
+# 所以只需多这一个包 + 一个 90MB 模型，不必引入 torch 那 2.5GB。
+# 模型只在首次运行时下载（默认走 HF 镜像），之后完全离线。
+fastembed>=0.4
+
+# --- M4：检索问答（Agent 编排 + 流式生成）---
+# Q1B 决策：LangGraph 做「意图路由 + 分支节点」（不是单链、也不是 ReAct 循环）。
+# 选它而不是手写 if/else：状态机的节点与边是显式声明，能直接画出来，
+# 排查「这问题到底走了哪条路」时看一张图即可；代价是多一层概念（State/Node/Edge）。
+langgraph>=0.2
+# Q2A 决策：langchain-openai 的 ChatOpenAI 走 OpenAI 兼容协议接 DeepSeek。
+# 选它而不是直接用 openai SDK：token 用量、流式增量、消息对象都已标准化，
+# 且换供应商只改 base_url/model 两个环境变量（D6 的兑现点）。
+langchain-openai>=0.2
+# 显式声明而不是靠上面两个传递进来：本项目**直接**使用它——消息类
+# （SystemMessage/HumanMessage/AIMessage）与测试用的 FakeChatModel 都来自这里。
+# 只依赖传递引入的话，上游哪天调整依赖树就会突然 ImportError。
+langchain-core>=0.3
+
+# --- M5：前端（Streamlit 多页应用）---
+# 前端走同步 httpx 调后端（复用上面的 httpx 依赖，不新增）。Streamlit 只是
+# 交互层：st.navigation 多页、st.chat_input/chat_message 对话、st.file_uploader 上传。
+streamlit>=1.60
+
+# --- 测试 ---
+pytest>=8.3
+pytest-asyncio>=0.24

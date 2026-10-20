@@ -1,0 +1,19 @@
+# 构建镜像时排除以下内容，避免把本地环境与数据打进镜像
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# 数据与运行期产物（由卷挂载，不进镜像）
+data/
+logs/
+
+# 密钥与配置（运行时经 env_file 从宿主机读，绝不烘焙进镜像）
+.env
+
+# 版本控制与文档产物
+.git/
+.gitignore

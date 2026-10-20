@@ -1,0 +1,15 @@
+# 统一换行策略：仓库内存 LF，避免 Windows/Linux 协作者产生整文件 diff
+* text=auto eol=lf
+
+# Windows 脚本必须保留 CRLF，否则 cmd.exe 解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf
+
+# 二进制资源不做换行转换
+*.ico binary
+*.png binary
+*.jpg binary
+*.exe binary
+*.zip binary
