@@ -10,7 +10,6 @@
 """
 
 import pytest
-
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from app.core.exceptions import AppError

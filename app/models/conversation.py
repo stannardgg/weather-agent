@@ -4,7 +4,7 @@ M1 建表，M4 的 Agent 编排开始写入。字段形状由需求决定（C1 �
 与 Agent 内部实现无关：tool_calls 用 JSON 列承载，将来存什么结构都不需要改表。
 """
 
-from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin

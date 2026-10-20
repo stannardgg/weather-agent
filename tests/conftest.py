@@ -10,15 +10,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.config import settings
-from app.db.base import Base
-from app.db.session import get_db
-from app.main import app
-
 # 必须导入 models 包，否则 Base.metadata 里没有表，create_all 建不出任何东西。
 # 注意这里用 `from app import models as _models` 而不是 `import app.models`：
 # 后者会把本地名字 app 重新绑定成「包」对象，覆盖上面导入的 FastAPI 实例。
 from app import models as _models  # noqa: F401
+from app.core.config import settings
+from app.db.base import Base
+from app.db.session import get_db
+from app.main import app
 
 
 @pytest.fixture(autouse=True)

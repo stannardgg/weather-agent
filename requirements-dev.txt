@@ -1,0 +1,16 @@
+# 开发与质量门禁依赖（**不进生产镜像**）。
+#
+# 版本写死而不是用 >=：门禁工具本身就是"裁判"，裁判的行为必须可复现。
+# ruff 换个版本新增一条规则，就可能让昨天全绿的 PR 今天变红——
+# 那不是代码退步，是裁判换了尺子。升级 ruff 应当是一次显式提交：
+# 改这里的版本号 → 本地跑一遍 → 修完所有新问题 → PR 里说明为什么升级。
+#
+# 安装：pip install -r requirements.lock -r requirements-dev.txt
+
+-r requirements.lock
+
+ruff==0.17.1
+mypy==2.4.0
+pytest-cov==7.1.0
+# 用于重新生成 requirements.lock（pip-compile）
+pip-tools==7.6.2

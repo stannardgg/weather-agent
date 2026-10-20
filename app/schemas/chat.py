@@ -21,17 +21,20 @@ SSE（Server-Sent Events，服务端把回答一个字一个字推给前端的�
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
 
 # SSE 事件名（契约的一部分，前端按它们分支）
-SSE_META = "meta"
-SSE_DELTA = "delta"
-SSE_DONE = "done"
-SSE_ERROR = "error"
+# SSE 事件名。声明成 Final[Literal[...]] 而不是裸 str 是为了让 mypy 能确认
+# 「event 字段的默认值与它的 Literal 类型一致」——这两个值一旦写岔（比如把
+# SSE_DELTA 拿来当 done 的默认值），前端的事件分发会静默失效，运行时不报错。
+SSE_META: Final[Literal["meta"]] = "meta"
+SSE_DELTA: Final[Literal["delta"]] = "delta"
+SSE_DONE: Final[Literal["done"]] = "done"
+SSE_ERROR: Final[Literal["error"]] = "error"
 
 # 来源类型：weather = 实时天气接口；knowledge = 知识库检索片段
 SourceType = Literal["weather", "knowledge"]

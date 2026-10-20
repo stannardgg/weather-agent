@@ -4,13 +4,13 @@
 换天气供应商时这里不动，只改 tools/weather.py。
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class ResolvedLocation(BaseModel):

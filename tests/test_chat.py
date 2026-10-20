@@ -27,7 +27,8 @@ from langchain_core.messages import AIMessage
 from pydantic import PrivateAttr
 from sqlalchemy import update as sa_update
 
-from app.agent import extract, graph as graph_module, nodes, router
+from app.agent import extract, nodes, router
+from app.agent import graph as graph_module
 from app.agent.state import Intent, IntentSource
 from app.core.config import settings
 from app.crud import conversation as conversation_crud

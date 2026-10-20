@@ -17,7 +17,7 @@
 明天可能要记「旧值→新值」），用 JSON 列存附加信息，加字段不用改表。
 """
 
-from sqlalchemy import Index, Integer, JSON, String
+from sqlalchemy import JSON, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin

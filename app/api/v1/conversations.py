@@ -12,8 +12,8 @@
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, DBSession
-from app.crud import conversation as conversation_crud
 from app.core.exceptions import NotFoundError
+from app.crud import conversation as conversation_crud
 from app.schemas.chat import (
     ConversationMessagesOut,
     ConversationOut,

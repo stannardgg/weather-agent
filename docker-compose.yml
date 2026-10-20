@@ -1,6 +1,12 @@
 # 企业级天气查询 Agent —— 后端 + 前端两服务编排。
 # 使用前：cp .env.example .env 并填好密钥（WEATHER_* 与 LLM_*）。
 # 数据（SQLite / Chroma / 上传文件 / 模型缓存）统一挂在 ./data，删容器不丢数据。
+#
+# 本文件承担"容器能不能被判定为健康"这件事：
+#   - /health 只证明进程活着（200），/health/ready 才证明数据库连得上；
+#     探针打的是后者语义的入口，避免"进程活着但库挂了"被当成健康。
+#   - frontend 用 condition: service_healthy 等后端，而不是 service_started，
+#     否则 Streamlit 会在后端还没起来时抢跑，首个页面报连接失败。
 
 services:
   backend:
@@ -15,6 +21,31 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    healthcheck:
+      # 用 python 自带的 urllib 而不是 curl/wget：slim 镜像没装这两个，
+      # 为了健康检查往生产镜像里塞一个 HTTP 客户端不值得。
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request
+          urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health", timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 首次启动要跑 alembic 迁移 + 加载向量模型，给足冷启动时间
+      start_period: 40s
+    # 资源上限：fastembed 的 ONNX 推理是 CPU 密集型，不设限会与同机其它容器抢核。
+    # 2 CPU 是"单机私有化 + 个位数并发"的经验值，压测后按实际 P95 调整。
+    mem_limit: 2g
+    cpus: "2.0"
+    logging:
+      driver: json-file
+      options:
+        # 不限制的话容器日志会无限增长，长期运行后撑爆磁盘（真实事故里很常见）
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build: .
@@ -26,7 +57,27 @@ services:
     environment:
       - API_BASE_URL=http://backend:8000/api/v1
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "8501:8501"
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request
+          urllib.request.urlopen("http://127.0.0.1:8501/_stcore/health", timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 1g
+    cpus: "1.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

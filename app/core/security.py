@@ -7,7 +7,7 @@ bcrypt 故意慢（成本因子可调），把暴力破解的时间成本拉高�
 否则超长密码会被静默截断，出现「设置了 100 位密码但只有前 72 位有效」的隐患。
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
@@ -38,7 +38,7 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_access_token(subject: str, expires_minutes: int | None = None) -> str:
     """签发 access token。subject 放用户 ID，不放入任何敏感信息。"""
     minutes = expires_minutes or settings.access_token_expire_minutes
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),

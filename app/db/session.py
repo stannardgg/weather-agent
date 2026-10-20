@@ -41,7 +41,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """FastAPI 依赖：每个请求一个会话。
 
     这里不自动 commit —— 事务边界由 crud 层显式控制，避免「忘记提交」与

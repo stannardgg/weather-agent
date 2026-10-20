@@ -26,8 +26,8 @@ import re
 from typing import Any
 
 import streamlit as st
-
 from api_client import BackendClient, BackendError
+
 from views import get_client
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

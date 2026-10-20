@@ -140,7 +140,7 @@ class PlaceholderEmbedder:
         values: list[float] = []
         counter = 0
         while len(values) < self.dimension:
-            digest = hashlib.sha256(f"{counter}\x00{text}".encode("utf-8")).digest()
+            digest = hashlib.sha256(f"{counter}\x00{text}".encode()).digest()
             # 每个字节 0-255 映射到 [-1, 1)
             values.extend(byte / 127.5 - 1.0 for byte in digest)
             counter += 1

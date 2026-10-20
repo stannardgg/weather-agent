@@ -16,10 +16,10 @@
 """
 
 from sqlalchemy import (
+    JSON,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,

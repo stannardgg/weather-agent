@@ -74,11 +74,14 @@ def _build_chat_model() -> "BaseChatModel":
         raise LLMNotConfiguredError()
     # 延迟导入：langchain-openai 会拉进 openai SDK 与 tiktoken，放模块顶层拖慢启动
     from langchain_openai import ChatOpenAI
+    from pydantic import SecretStr
 
     return ChatOpenAI(
         model=settings.llm_model,
         base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
+        # 用 SecretStr 包一层：SDK 的类型契约要求如此，且它能在 repr/日志里
+        # 把密钥显示成 ********** —— 直接传裸 str 一旦被打印到异常栈里就是泄露。
+        api_key=SecretStr(settings.llm_api_key),
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_seconds,
         # 有限重试（M6-Q4）：显式写出来而不是用默认值，且走配置项——默认行为会变，

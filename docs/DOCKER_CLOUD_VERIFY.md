@@ -6,16 +6,16 @@
 ## 一、本地打包（在 Windows 本机 Git Bash 执行）
 
 ```bash
-cd /d/cache/.workbuddy/demo1/weather-agent
+cd <项目根目录>
 bash scripts/package_for_cloud.sh
 ```
 
-产物在 `demo1/weather-agent-docker.tar.gz`（已排除 `.venv`、`data`、`logs`、`.env`、`.git` 等，约几 MB）。
+产物在 `<项目根目录>/../weather-agent-docker.tar.gz`（已排除 `.venv`、`data`、`logs`、`.env`、`.git` 等，约几 MB）。
 
 ## 二、上传到云主机（替换成你的 IP 和用户）
 
 ```bash
-scp /d/cache/.workbuddy/demo1/weather-agent-docker.tar.gz ubuntu@YOUR_SERVER_IP:~/
+scp <项目根目录>/../weather-agent-docker.tar.gz ubuntu@YOUR_SERVER_IP:~/
 ```
 
 ## 三、登录云主机并准备环境

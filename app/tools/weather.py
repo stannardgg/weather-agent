@@ -14,7 +14,7 @@ WeatherAuthError，处置办法见文件顶部注释。
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -263,6 +263,17 @@ def _dig(raw: Any, *path: str) -> Any:
     return current
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """把「可能不是 dict」的值收敛成 dict，非 dict 一律当空字典。
+
+    存在的理由：上游 JSON 的形状是外部契约，`raw.get("daytime")` 的静态类型是
+    `Any | None`。直接在调用处写 `x if isinstance(x, dict) else {}` 会得到
+    一个 union 类型，mypy 会把「可能为 None」一路带到后面每个 .get() 上；
+    收进这个函数后，下游拿到的就是确定的 dict。
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def _local_dt(value: Any) -> datetime | None:
     """把和风的 UTC 时刻（如 '2026-10-11T16:00Z'）转成东八区 datetime。"""
     if not isinstance(value, str) or not value.strip():
@@ -274,7 +285,7 @@ def _local_dt(value: Any) -> datetime | None:
         return None
     if parsed.tzinfo is None:
         # 兜底：遇到不带时区的串时按 UTC 解释，好过静默当成服务器本地时间
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(_CST)
 
 
@@ -638,8 +649,10 @@ class QWeatherProvider:
                 skipped_no_date += 1
                 continue
 
-            day = raw.get("daytime") if isinstance(raw.get("daytime"), dict) else {}
-            precip = day.get("precipitation") if isinstance(day.get("precipitation"), dict) else {}
+            # 显式收敛成 dict：不这么做的话 mypy 会把「可能为 None」一路带到
+            # 下面所有 .get() 调用上，而那些 None 其实已被 isinstance 排除。
+            day = _as_dict(raw.get("daytime"))
+            precip = _as_dict(day.get("precipitation"))
 
             forecasts.append(
                 DailyForecast(

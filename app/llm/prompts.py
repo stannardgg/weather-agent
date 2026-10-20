@@ -201,7 +201,7 @@ def build_messages(
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    messages: list["BaseMessage"] = [SystemMessage(content=SYSTEM_PROMPT)]
+    messages: list[BaseMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
     if history:
         messages.extend(history)
     content = f"{context_section}\n\n【用户问题】\n{question}".strip()

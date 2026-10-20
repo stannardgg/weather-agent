@@ -13,7 +13,8 @@
 这是共用路由必然的取舍，写在代码里比让人自己去猜要好。
 """
 
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse

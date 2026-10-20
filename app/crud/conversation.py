@@ -24,7 +24,8 @@ UPDATE 时才触发**。新增一条消息并不会碰会话行，于是「会�
 
 # 同 crud/document.py：自定义函数名不能与 SQLAlchemy 的同名符号撞车（§11 硬约定第 13 条）
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select, update as sa_update
+from sqlalchemy import func, or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation, Message

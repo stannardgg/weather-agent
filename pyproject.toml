@@ -1,0 +1,70 @@
+# 质量门禁配置（ruff / mypy / pytest / coverage）。
+#
+# 为什么需要这个文件：
+# 在它出现之前，ruff 用哪套规则取决于装的是哪个版本——同一份代码在不同机器上
+# 可能一会儿绿一会儿红，这种"门禁"没有意义。把规则集显式写死，CI 的结论才可复现。
+#
+# 为什么 target-version 是 py313：
+# .venv（本地开发）、Dockerfile（镜像）、CI 三处必须用同一个解释器版本。历史上
+# Dockerfile 是 3.12 而本地是 3.13，这类不一致的典型症状是"本地 180 个测试全过，
+# 镜像里 import 就报错"。统一到 3.13 后，requirements.lock 也才真正对应镜像里的依赖。
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+respect-gitignore = true
+extend-exclude = [".venv", "build", "dist", "alembic/versions"]
+
+[tool.ruff.lint]
+# 规则集刻意从窄开始：先保证"确定性错误"零容忍（未使用变量、未定义名字、导入顺序、
+# 已废弃写法），再逐步加严。一次性开全量规则的结果通常是加一堆 noqa 把门禁糊过去，
+# 那等于没有门禁。
+select = [
+    "E",     # pycodestyle
+    "F",     # pyflakes：未定义名字、未使用导入
+    "I",     # isort：导入顺序
+    "UP",    # pyupgrade：已废弃的旧写法
+    "B",     # bugbear：真实踩过的坑（如可变默认参数）
+    "ASYNC", # 异步误用（如在 async 函数里做阻塞调用）
+]
+ignore = [
+    "E501",  # 行长交给人工判断，强制断行反而降低注释可读性
+    "B008",  # FastAPI 的 Depends()/Query() 必须写在默认参数里，这是框架惯例
+    # UP042/UP046 是"现代化建议"而非缺陷，改动的收益（少写几个字母）远小于风险：
+    # StrEnum 与 (str, Enum) 的 str() 行为不同，而意图值已按字符串契约落库/进 SSE；
+    # PEP 695 泛型写法需要确认 pydantic 的运行时支持。这两项留待单独评估。
+    "UP042",
+    "UP046",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "frontend", "tests"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["app"]
+explicit_package_bases = true
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_configs = true
+# check_untyped_defs：没写注解的函数体也检查。本项目大量函数有完整注解，
+# 但 L4 节点与部分回调没有——不开这一项，等于放过最容易出错的那部分。
+check_untyped_defs = true
+no_implicit_optional = true
+# 不要求"所有函数必须有注解"：那是迁移到全类型项目的终点，不是起点。
+disallow_untyped_defs = false
+# SQLAlchemy / pydantic 的插件会显著拖慢检查，且当前代码不依赖其静态推导
+plugins = []
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/__init__.py", "app/main.py"]
+
+[tool.coverage.report]
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]

@@ -33,8 +33,9 @@ SSE 的响应体是一个「边算边发」的生成器，它在**路由函数�
 """
 
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,6 +130,10 @@ async def prepare(
     会话归属的判断与 §7 的约定一致：**「不存在」与「属于别人」返回同一个 404**，
     不给出可区分的错误，避免变成枚举别人会话 ID 的探测接口。
     """
+    # 显式标注成 Optional：两个分支返回的类型不同（新建的会话一定存在，
+    # 查出来的可能是 None），不标注的话 mypy 会按第一个分支把它固定成 Conversation，
+    # 于是第二分支的 None 判断被当成"永远不会成立"，真正的 404 分支就失去类型保护。
+    conversation: Conversation | None
     if conversation_id is None:
         conversation = await conversation_crud.create_conversation(db, user.id)
     else:
@@ -336,7 +341,10 @@ async def stream_events(
                 if mode == "updates":
                     for node, update in payload.items():
                         if isinstance(update, dict):
-                            merged.update(update)
+                            # cast 是必要的：LangGraph 的 updates 载荷声明成
+                            # dict[str, Any]，但它的语义就是"某节点返回的状态增量"，
+                            # 静态上无法证明每个 key 都属于 AgentState。
+                            merged.update(cast(AgentState, update))
                         # compose 跑完 = 天气与检索都已定案，此刻发 meta 最有信息量
                         if node == NODE_COMPOSE and not meta_sent:
                             meta_sent = True

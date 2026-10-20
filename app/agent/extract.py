@@ -23,8 +23,8 @@ M5 的 Streamlit 界面会用城市选择器把 `city` 直接传进来，那条�
 """
 
 import re
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta, timezone
-from typing import Iterable
 
 # 与 tools/weather.py 保持同一个时区：预报日期按东八区理解，
 # 「今天/明天」也必须按东八区算，否则 UTC 凌晨时段会整体差一天（§9.3 踩过）。

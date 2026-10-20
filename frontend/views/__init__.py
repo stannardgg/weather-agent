@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import streamlit as st
-
 from api_client import BackendClient, default_client
 
 

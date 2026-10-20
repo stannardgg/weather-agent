@@ -1,0 +1,85 @@
+# 质量门禁。三道关卡按"便宜的先跑"排序：静态检查秒级，类型检查十几秒，
+# 测试近一分钟。前面的关卡失败时直接停下，不用等后面的跑完。
+#
+# 为什么门禁只跑这三样，而不是把打包、镜像构建、端到端冒烟全塞进来：
+# 本文件守的是"这次提交有没有把代码改坏"，端到端冒烟（scripts/smoke_*.py）
+# 需要真实密钥与外部服务，属于部署前的人工验收，不该阻塞每次 push。
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支连续推送时取消上一次未完成的运行：门禁只关心最新一次的结果，
+# 旧的那次即使跑完也没有意义，白占 runner 时间。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: 静态检查 + 类型检查 + 测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          # 缓存键跟着 lock 文件走：lock 不变就不会重新下载几百 MB 的依赖
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock -r requirements-dev.txt
+
+      # ---------------------------------------------------------------
+      # 关卡一：静态检查
+      # ---------------------------------------------------------------
+      - name: ruff（未使用导入、未定义名字、导入顺序、异步误用）
+        run: ruff check app tests frontend
+
+      # ---------------------------------------------------------------
+      # 关卡二：类型检查
+      # mypy 的配置在 pyproject.toml：只查 app/，不要求全量注解，
+      # 但开了 check_untyped_defs（没写注解的函数体也检查）。
+      # ---------------------------------------------------------------
+      - name: mypy（类型一致性）
+        run: mypy app
+
+      # ---------------------------------------------------------------
+      # 关卡三：测试 + 覆盖率
+      # 测试全程离线：向量走占位实现、LLM 走假模型，不需要任何密钥。
+      # 因此在 CI 里不配置 .env 也能跑——这本身就是"依赖注入做对了"的证据。
+      #
+      # --cov-fail-under：覆盖率跌破阈值直接判失败。
+      # 阈值是"当前实测值向下取整再留一点余量"定的，不是拍脑袋的 80%：
+      # 定得太高，后来的人只会加 pragma: no cover 把它糊过去。
+      # ---------------------------------------------------------------
+      - name: pytest（单元 + 接口测试）
+        env:
+          APP_ENV: dev
+        run: |
+          pytest -q \
+            --cov=app \
+            --cov-report=term \
+            --cov-report=xml \
+            --cov-fail-under=60
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+          retention-days: 7

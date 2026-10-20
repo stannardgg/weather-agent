@@ -14,6 +14,7 @@
   否则用户看到的就是「一直在解析中」，无从下手也无人知道出了什么事。
 """
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -31,7 +32,6 @@ from app.models.document import (
     STATUS_PARSING,
     STATUS_PENDING,
     STATUS_READY,
-    Document,
 )
 from app.models.user import User
 from app.rag import loader as loader_module
@@ -105,6 +105,16 @@ def _storage_path(user_id: int, file_hash: str, safe_name: str) -> Path:
     return Path(settings.upload_dir) / str(user_id) / f"{file_hash[:16]}_{safe_name}"
 
 
+def _write_bytes_blocking(path: Path, content: bytes) -> None:
+    """建父目录 + 写文件（同步）。**只能经 `asyncio.to_thread` 调用。**
+
+    单独抽成函数而不是在调用处写两行，是为了让「这段是阻塞 IO」在代码里显式可见：
+    它出现在 async 函数里而不在线程池里，就是一次事件循环阻塞。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
 async def list_documents(
     db: AsyncSession, user: User, *, page: int, page_size: int
 ) -> tuple[list[DocumentOut], int]:
@@ -163,10 +173,10 @@ async def upload_document(
         return DocumentOut.model_validate(existing), True
 
     path = _storage_path(user.id, file_hash, safe_name)
-    # 落盘也是阻塞 IO，但只在请求里写一个最大 20MB 的文件，代价可控；
-    # 真正耗时的是后续解析，那部分已经交给后台任务。
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
+    # 落盘走线程池：上限 20MB，机械盘或杀软实时扫描下单次可能到秒级，
+    # 在事件循环里写会让同期所有请求一起卡住（原先注释判断「代价可控」，
+    # 那是按 SSD 的理想情况估的，不能作为门禁依据）。
+    await asyncio.to_thread(_write_bytes_blocking, path, content)
 
     document = await document_crud.create(
         db,
@@ -302,8 +312,12 @@ async def delete_document(db: AsyncSession, user: User, document_id: int) -> Non
 
     # 磁盘文件删除失败不影响业务结果（记录和向量都已清掉），记警告即可，
     # 不因为一个删不掉的文件让整个删除请求失败。
+    #
+    # 走线程池而不是直接 unlink：unlink 是同步系统调用，在事件循环里执行会阻塞
+    # 同一进程内所有并发请求（ASYNC 门禁规则）。单个文件通常很快，但网络盘 /
+    # 杀软扫描下的 unlink 可能达数百毫秒，那种抖动会直接体现为别人的接口超时。
     try:
-        Path(stored_path).unlink(missing_ok=True)
+        await asyncio.to_thread(Path(stored_path).unlink, missing_ok=True)
     except OSError as exc:
         logger.warning("删除文件失败（不影响文档删除）path=%s: %s", stored_path, exc)
 
@@ -348,8 +362,9 @@ async def update_document(
     file_hash = hashlib.sha256(content).hexdigest()
     old_path = Path(document.stored_path)
     new_path = _storage_path(user.id, file_hash, safe_name)
-    new_path.parent.mkdir(parents=True, exist_ok=True)
-    new_path.write_bytes(content)
+    # 建目录 + 落盘同样是阻塞 IO。上传上限 20MB，直接写会占住事件循环；
+    # 用 to_thread 把这段整块挪到线程池（两条命令合成一个函数，避免两次跨线程开销）。
+    await asyncio.to_thread(_write_bytes_blocking, new_path, content)
 
     # 更新记录本身（走 crud 层统一出口，避免在服务层拼 SQL）
     document.filename = safe_name
@@ -365,7 +380,7 @@ async def update_document(
 
     if old_path != new_path:
         try:
-            old_path.unlink(missing_ok=True)
+            await asyncio.to_thread(old_path.unlink, missing_ok=True)
         except OSError as exc:
             logger.warning("删除被替换的旧文件失败 path=%s: %s", old_path, exc)
 
